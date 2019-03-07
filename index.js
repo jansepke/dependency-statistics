@@ -1,4 +1,5 @@
 const fs = require("fs");
+const chalk = require("chalk");
 const globby = require("globby");
 const fetch = require("node-fetch");
 const GitHub = require("github-api");
@@ -145,7 +146,14 @@ const fetchGithubStats = async repository => {
       github
     ]);
 
-  const output = table(tableData, {
+  const header = [
+    chalk.bold("package"),
+    chalk.bold("used in"),
+    chalk.bold("size"),
+    chalk.bold("stars")
+  ];
+
+  const output = table([header, ...tableData], {
     border: getBorderCharacters(`void`),
     columnDefault: {
       paddingLeft: 0,
