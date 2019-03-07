@@ -11,6 +11,7 @@ const {
   toArray,
   groupBy,
   take,
+  tap,
   reduce
 } = require("rxjs/operators");
 const { table, getBorderCharacters } = require("table");
@@ -52,20 +53,23 @@ const fetchGithubStats = async repository => {
     `!${searchPath}/**/node_modules/**`
   ]);
 
-  console.log("Scanned:", paths.join(" "));
+  console.log("Scanning dependencies in:");
 
   const data = await from(paths)
     .pipe(
-      map(path => ({ path, config: require(path) })),
+      tap(path =>
+        console.log(
+          `[${paths.indexOf(path)}] ${path
+            .replace("/package.json", "")
+            .replace("package.json", "") || "."}`
+        )
+      ),
+      map(path => ({ path, config: require("./" + path) })),
       map(({ path, config: { dependencies, devDependencies } }) => ({
         path,
-        name:
-          path
-            .replace(`${searchPath}/`, "")
-            .replace("/package.json", "")
-            .replace("package.json", "") || ".",
-        dependencies: Object.keys(dependencies),
-        devDependencies: Object.keys(devDependencies)
+        name: path,
+        dependencies: Object.keys(dependencies || {}),
+        devDependencies: Object.keys(devDependencies || {})
       })),
       flatMap(({ dependencies, devDependencies, ...rest }) => [
         ...dependencies.map(dep => ({ dep, ...rest })),
@@ -74,8 +78,12 @@ const fetchGithubStats = async repository => {
       groupBy(({ dep }) => dep),
       flatMap(group =>
         group.pipe(
-          reduce((acc, cur) =>
-            !acc ? cur : { ...acc, name: `${acc.name}, ${cur.name}` }
+          reduce(
+            (acc, cur) =>
+              !acc
+                ? { ...cur, name: paths.indexOf(cur.name) }
+                : { ...acc, name: `${acc.name}, ${paths.indexOf(cur.name)}` },
+            null
           )
         )
       ),
@@ -96,7 +104,7 @@ const fetchGithubStats = async repository => {
         return false;
       }),
       map(({ configPath, ...rest }) => ({
-        config: require(configPath),
+        config: require("./" + configPath),
         ...rest
       })),
       filter(
@@ -132,7 +140,7 @@ const fetchGithubStats = async repository => {
     })
     .map(({ name, dep, stats, github }) => [
       dep,
-      "-",
+      name,
       stats.prettySize,
       github
     ]);
