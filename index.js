@@ -80,13 +80,13 @@ const fetchGithubStats = async repository => {
       groupBy(({ dep }) => dep),
       flatMap(group =>
         group.pipe(
-          reduce(
-            (acc, cur) =>
-              !acc
-                ? { ...cur, name: paths.indexOf(cur.name) }
-                : { ...acc, name: `${acc.name}, ${paths.indexOf(cur.name)}` },
-            null
-          )
+          reduce((acc, cur) => {
+            if (!acc) {
+              acc = { ...cur, name: Array.from(" ".repeat(paths.length)) };
+            }
+            acc.name[paths.indexOf(cur.name)] = "x";
+            return acc;
+          }, null)
         )
       ),
       map(({ dep, path, ...rest }) => ({
@@ -131,14 +131,14 @@ const fetchGithubStats = async repository => {
     .toPromise();
 
   const tableData = _.orderBy(data, "github", ["desc"]).map(
-    ({ name, dep, stats, github }) => [dep, name, stats.prettySize, github]
+    ({ name, dep, stats, github }) => [dep, ...name, stats.prettySize, github]
   );
 
   const header = [
-      chalk.bold("package"),
-      chalk.bold("used in"),
-      chalk.bold("size"),
-      chalk.bold("stars")
+    chalk.bold("package"),
+    ...paths.keys(),
+    chalk.bold("size"),
+    chalk.bold("stars")
   ];
 
   const output = table([header, ...tableData], {
@@ -148,10 +148,10 @@ const fetchGithubStats = async repository => {
       paddingRight: 1
     },
     columns: {
-      2: {
+      [header.length - 1]: {
         alignment: "right"
       },
-      3: {
+      [header.length]: {
         alignment: "right"
       }
     },
