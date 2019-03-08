@@ -1,4 +1,5 @@
 const fs = require("fs");
+const _ = require("lodash");
 const chalk = require("chalk");
 const globby = require("globby");
 const axios = require("axios");
@@ -129,22 +130,9 @@ const fetchGithubStats = async repository => {
     )
     .toPromise();
 
-  const tableData = data
-    .sort(({ github: github1 }, { github: github2 }) => {
-      if (github1 > github2) {
-        return -1;
-      }
-      if (github1 < github2) {
-        return 1;
-      }
-      return 0;
-    })
-    .map(({ name, dep, stats, github }) => [
-      dep,
-      name,
-      stats.prettySize,
-      github
-    ]);
+  const tableData = _.orderBy(data, "github", ["desc"]).map(
+    ({ name, dep, stats, github }) => [dep, name, stats.prettySize, github]
+  );
 
   const header = [
       chalk.bold("package"),
