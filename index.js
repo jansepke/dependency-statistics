@@ -131,12 +131,19 @@ const fetchGithubStats = async repository => {
     .toPromise();
 
   const tableData = _.orderBy(data, "github", ["desc"]).map(
-    ({ name, dep, stats, github }) => [dep, ...name, stats.prettySize, github]
+    ({ name, dep, stats, github }) => [
+      dep,
+      ...(paths.length > 1 ? name : []),
+      stats.prettySize,
+      github
+    ]
   );
 
   const header = [
     chalk.bold("package"),
-    ...paths.keys(),
+    ...(paths.length > 1
+      ? Array.from(paths.keys()).map(k => chalk.bold(k))
+      : []),
     chalk.bold("size"),
     chalk.bold("stars")
   ];
