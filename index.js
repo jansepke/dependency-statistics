@@ -1,7 +1,7 @@
 const fs = require("fs");
 const chalk = require("chalk");
 const globby = require("globby");
-const fetch = require("node-fetch");
+const axios = require("axios");
 const GitHub = require("github-api");
 const GitUrlParse = require("git-url-parse");
 const { from } = require("rxjs");
@@ -29,10 +29,10 @@ process.on("unhandledRejection", err => {
 });
 
 const fetchPackageStats = async name => {
-  const response = await fetch(
+  const response = await axios.get(
     `https://npm-download-size.seljebu.no/${encodeURIComponent(name)}`
   );
-  return await response.json();
+  return response.data;
 };
 
 const fetchGithubStats = async repository => {
@@ -147,10 +147,10 @@ const fetchGithubStats = async repository => {
     ]);
 
   const header = [
-    chalk.bold("package"),
-    chalk.bold("used in"),
-    chalk.bold("size"),
-    chalk.bold("stars")
+      chalk.bold("package"),
+      chalk.bold("used in"),
+      chalk.bold("size"),
+      chalk.bold("stars")
   ];
 
   const output = table([header, ...tableData], {
