@@ -36,6 +36,13 @@ const fetchPackageStats = async name => {
   return response.data;
 };
 
+const fetchPackageDownloadCount = async name => {
+  const response = await axios.get(
+    `https://api.npmjs.org/downloads/point/last-week/${name}`
+  );
+  return response.data.downloads;
+};
+
 const fetchGithubStats = async repository => {
   if (
     !["github", "github.com"].includes(repository.resource) &&
@@ -126,15 +133,21 @@ const fetchGithubStats = async repository => {
         stats: await fetchPackageStats(`${dep}`),
         ...rest
       })),
+      flatMap(async ({ dep, ...rest }) => ({
+        dep,
+        downloads: await fetchPackageDownloadCount(`${dep}`),
+        ...rest
+      })),
       toArray()
     )
     .toPromise();
 
   const tableData = _.orderBy(data, "github", ["desc"]).map(
-    ({ name, dep, stats, github }) => [
+    ({ name, dep, stats, github, downloads }) => [
       dep,
       ...(paths.length > 1 ? name : []),
       stats.prettySize,
+      downloads,
       github
     ]
   );
@@ -145,6 +158,7 @@ const fetchGithubStats = async repository => {
       ? Array.from(paths.keys()).map(k => chalk.bold(k))
       : []),
     chalk.bold("size"),
+    chalk.bold("downloads"),
     chalk.bold("stars")
   ];
 
@@ -152,14 +166,12 @@ const fetchGithubStats = async repository => {
     border: getBorderCharacters(`void`),
     columnDefault: {
       paddingLeft: 0,
-      paddingRight: 1
+      paddingRight: 1,
+      alignment: "right"
     },
     columns: {
-      [header.length - 1]: {
-        alignment: "right"
-      },
-      [header.length]: {
-        alignment: "right"
+      0: {
+        alignment: "left"
       }
     },
     drawHorizontalLine: () => {
