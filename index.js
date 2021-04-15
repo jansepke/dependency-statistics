@@ -1,97 +1,77 @@
-const fs = require("fs");
-const _ = require("lodash");
+const sortBy = require("lodash.sortby");
 const chalk = require("chalk");
 const globby = require("globby");
 const axios = require("axios");
-const GitHub = require("github-api");
-const GitUrlParse = require("git-url-parse");
 const { from } = require("rxjs");
 const {
   map,
   flatMap,
-  filter,
   toArray,
   groupBy,
-  take,
   tap,
-  reduce
+  reduce,
+  mergeMap,
 } = require("rxjs/operators");
 const { table, getBorderCharacters } = require("table");
 
 const searchPath = (process.argv[2] || ".").replace(/\/$/, "");
 
-const gh = new GitHub({
-  token: process.env.GITHUB_TOKEN
-});
-
 // fail on UnhandledPromiseRejectionWarning
-process.on("unhandledRejection", err => {
+process.on("unhandledRejection", (err) => {
   throw err;
 });
 
-const fetchPackageStats = async name => {
-  const response = await axios.get(
-    `https://npm-download-size.seljebu.no/${encodeURIComponent(name)}`
-  );
-  return response.data;
-};
-
-const fetchPackageDownloadCount = async name => {
-  const response = await axios.get(
-    `https://api.npmjs.org/downloads/point/last-week/${name}`
-  );
-  return response.data.downloads;
-};
-
-const fetchGithubStats = async repository => {
-  if (
-    !["github", "github.com"].includes(repository.resource) &&
-    repository.protocol !== "file"
-  ) {
-    return "";
+const fetchPackageDownloadCount = async (name) => {
+  try {
+    const response = await axios.get(
+      `https://api.npmjs.org/downloads/point/last-week/${name}`
+    );
+    return response.data.downloads;
+  } catch (error) {
+    return "-";
   }
-  const stats = await gh
-    .getRepo(repository.owner, repository.name)
-    .getDetails();
-  return stats.data.stargazers_count;
 };
 
 (async () => {
   const paths = await globby([
     `${searchPath}/**/package.json`,
-    `!${searchPath}/**/node_modules/**`
+    `!${searchPath}/**/node_modules/**`,
   ]);
+  const filteredPaths = paths.filter((path) => !path.includes("node_modules"));
 
   console.log("Scanning dependencies in:");
 
-  const data = await from(paths)
+  const data = await from(filteredPaths)
     .pipe(
-      tap(path =>
+      tap((path) =>
         console.log(
-          `[${paths.indexOf(path)}] ${path
-            .replace("/package.json", "")
-            .replace("package.json", "") || "."}`
+          `[${filteredPaths.indexOf(path)}] ${
+            path.replace("/package.json", "").replace("package.json", "") || "."
+          }`
         )
       ),
-      map(path => ({ path, config: require("./" + path) })),
+      map((path) => ({ path, config: require("./" + path) })),
       map(({ path, config: { dependencies, devDependencies } }) => ({
         path,
         name: path,
         dependencies: Object.keys(dependencies || {}),
-        devDependencies: Object.keys(devDependencies || {})
+        devDependencies: Object.keys(devDependencies || {}),
       })),
-      flatMap(({ dependencies, devDependencies, ...rest }) => [
-        ...dependencies.map(dep => ({ dep, ...rest })),
-        ...devDependencies.map(dep => ({ dep, ...rest }))
+      mergeMap(({ dependencies, devDependencies, ...rest }) => [
+        ...dependencies.map((dep) => ({ dep, ...rest })),
+        ...devDependencies.map((dep) => ({ dep, ...rest })),
       ]),
       groupBy(({ dep }) => dep),
-      flatMap(group =>
+      mergeMap((group) =>
         group.pipe(
           reduce((acc, cur) => {
             if (!acc) {
-              acc = { ...cur, name: Array.from(" ".repeat(paths.length)) };
+              acc = {
+                ...cur,
+                name: Array.from(" ".repeat(filteredPaths.length)),
+              };
             }
-            acc.name[paths.indexOf(cur.name)] = "x";
+            acc.name[filteredPaths.indexOf(cur.name)] = "x";
             return acc;
           }, null)
         )
@@ -103,63 +83,34 @@ const fetchGithubStats = async repository => {
           "package.json",
           `node_modules/${dep}/package.json`
         ),
-        ...rest
+        ...rest,
       })),
-      filter(({ configPath }) => {
-        if (fs.existsSync(configPath)) {
-          return true;
-        }
-        console.warn(`missing ${configPath}`);
-        return false;
-      }),
-      map(({ configPath, ...rest }) => ({
-        config: require("./" + configPath),
-        ...rest
-      })),
-      filter(
-        ({ config: { peerDependencies } }) =>
-          Object.keys(peerDependencies || {}).length === 0
-      ),
-      map(({ config, ...rest }) => ({
-        repository: GitUrlParse(config.repository.url || config.repository),
-        ...rest
-      })),
-      flatMap(async ({ repository, ...rest }) => ({
-        github: await fetchGithubStats(repository),
-        ...rest
-      })),
-      flatMap(async ({ dep, ...rest }) => ({
-        dep,
-        stats: await fetchPackageStats(`${dep}`),
-        ...rest
-      })),
-      flatMap(async ({ dep, ...rest }) => ({
+      mergeMap(async ({ dep, ...rest }) => ({
         dep,
         downloads: await fetchPackageDownloadCount(`${dep}`),
-        ...rest
+        ...rest,
       })),
       toArray()
     )
     .toPromise();
 
-  const tableData = _.orderBy(data, "github", ["desc"]).map(
-    ({ name, dep, stats, github, downloads }) => [
-      dep,
-      ...(paths.length > 1 ? name : []),
-      stats.prettySize,
-      downloads,
-      github
-    ]
-  );
+  const tableData = sortBy(
+    data,
+    "dep"
+  ).map(({ name, dep, downloads }, index) => [
+    index + 1,
+    dep,
+    ...(filteredPaths.length > 1 ? name : []),
+    downloads,
+  ]);
 
   const header = [
+    chalk.bold("#"),
     chalk.bold("package"),
-    ...(paths.length > 1
-      ? Array.from(paths.keys()).map(k => chalk.bold(k))
+    ...(filteredPaths.length > 1
+      ? Array.from(filteredPaths.keys()).map((k) => chalk.bold(k))
       : []),
-    chalk.bold("size"),
     chalk.bold("downloads"),
-    chalk.bold("stars")
   ];
 
   const output = table([header, ...tableData], {
@@ -167,16 +118,14 @@ const fetchGithubStats = async repository => {
     columnDefault: {
       paddingLeft: 0,
       paddingRight: 1,
-      alignment: "right"
+      alignment: "right",
     },
     columns: {
-      0: {
-        alignment: "left"
-      }
+      1: {
+        alignment: "left",
+      },
     },
-    drawHorizontalLine: () => {
-      return false;
-    }
+    drawHorizontalLine: () => false,
   });
 
   console.log(output);
